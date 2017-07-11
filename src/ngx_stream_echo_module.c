@@ -107,6 +107,7 @@ enum {
 };
 
 
+static void ngx_stream_close_connection(ngx_connection_t *c);
 static void ngx_stream_echo_handler(ngx_stream_session_t *s);
 static void ngx_stream_echo_resume_execution(ngx_stream_session_t *s);
 static ngx_int_t ngx_stream_echo_run_cmds(ngx_stream_session_t *s);
@@ -2171,4 +2172,34 @@ ngx_stream_echo_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
                               prev->lingering_timeout, 5000);
 
     return NGX_CONF_OK;
+}
+
+static void
+ngx_stream_close_connection(ngx_connection_t *c)
+{
+    ngx_pool_t  *pool;
+
+    ngx_log_debug1(NGX_LOG_DEBUG_STREAM, c->log, 0,
+                   "close stream connection: %d", c->fd);
+
+#if (NGX_STREAM_SSL)
+
+    if (c->ssl) {
+        if (ngx_ssl_shutdown(c) == NGX_AGAIN) {
+            c->ssl->handler = ngx_stream_close_connection;
+            return;
+        }
+    }
+
+#endif
+
+#if (NGX_STAT_STUB)
+    (void) ngx_atomic_fetch_add(ngx_stat_active, -1);
+#endif
+
+    pool = c->pool;
+
+    ngx_close_connection(c);
+
+    ngx_destroy_pool(pool);
 }
